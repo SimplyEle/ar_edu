@@ -3,6 +3,7 @@ using Photon.Realtime;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 using UnityEngine.XR.ARFoundation;
@@ -14,10 +15,8 @@ public class ObjectSyncController : MonoBehaviourPun, IPunObservable
 
     private PhotonView thisPhotonView;
     private PhotonView ownerPhotonView;
-    [SerializeField]
-    private int ownerPhotonViewId;
-    [SerializeField]
-    private int thisPhotonViewId;
+    public int ownerPhotonViewId;
+    public int thisPhotonViewId;
     private int ownerUserId;
     private Vector3 networkPosition;
     private Quaternion networkRotation;
@@ -46,19 +45,31 @@ public class ObjectSyncController : MonoBehaviourPun, IPunObservable
         previousPosition = position;
 
         networkPosition = position;
-
-        if (ownerPhotonView != null)
-        {
+        if (thisPhotonView != null && ownerPhotonView != null) {
             thisPhotonView.ObservedComponents.Add(this);
             ownerPhotonView.ObservedComponents.Add(this);
+            thisPhotonView.ObservedComponents.Add(PhotonView.Find(ownerPhotonViewId).GetComponent<ObjectSyncController>());
+            thisPhotonView.RPC("AddObservable", RpcTarget.AllViaServer, ownerPhotonViewId, thisPhotonViewId);
         }
     }
 
-    private void Update()
+    [PunRPC]
+    void AddObservable(int oPViewId, int tPViewId)
     {
-        if (ownerPhotonView != null && !ownerPhotonView.IsMine)
+        PhotonView.Find(oPViewId).ObservedComponents.Add(PhotonView.Find(tPViewId).GetComponent<ObjectSyncController>());
+    }
+
+    private void FixedUpdate()
+    {
+        if (photonView.Owner != PhotonNetwork.LocalPlayer)
         {
-            ownerPhotonView.RPC("UpdateRemoteObject", RpcTarget.AllBufferedViaServer, networkPosition, networkRotation, thisPhotonViewId, ownerPhotonViewId, ownerUserId);
+            gameObject.GetComponentInChildren<MeshRenderer>().enabled = false;
+        }
+        if (ownerPhotonView != null && photonView.IsMine)
+        {
+            transform.position = Vector3.MoveTowards(transform.position, networkPosition, distance * Time.deltaTime * PhotonNetwork.SerializationRate);
+            transform.rotation = Quaternion.RotateTowards(transform.rotation, networkRotation, angle * Time.deltaTime * PhotonNetwork.SerializationRate);
+            thisPhotonView.RPC("UpdateRemoteObject", RpcTarget.Others, networkRotation, ownerPhotonViewId);
         }
     }
 
@@ -107,307 +118,34 @@ public class ObjectSyncController : MonoBehaviourPun, IPunObservable
         }
     }
 
-    [PunRPC]
-    private void UpdateRemoteObject(Vector3 position, Quaternion rotation, int thisPhotonViewId, int ownerPhotonViewId, int ownerId)
-    {        
-        if (PhotonView.Find(ownerPhotonViewId) != null && ownerId != PhotonNetwork.LocalPlayer.ActorNumber)
-        {
-            PhotonView.Find(thisPhotonViewId).gameObject.transform.position = Vector3.MoveTowards(PhotonView.Find(thisPhotonViewId).gameObject.transform.position, position, distance * Time.deltaTime * PhotonNetwork.SerializationRate);
-            PhotonView.Find(thisPhotonViewId).gameObject.transform.rotation = Quaternion.RotateTowards(PhotonView.Find(thisPhotonViewId).gameObject.transform.rotation, rotation, angle * Time.deltaTime * PhotonNetwork.SerializationRate);
-        }
-    }
-
-    /*private float m_Distance;
-    private float m_Angle;
-
-    private Vector3 m_Direction;
-    private Vector3 m_NetworkPosition;
-    private Vector3 m_StoredPosition;
-
-    private Quaternion m_NetworkRotation;
-
-    public bool m_SynchronizePosition = true;
-    public bool m_SynchronizeRotation = true;
-    public bool m_SynchronizeScale = false;
-
-    private PhotonView thisPhotonView;
-    private PhotonView ownerPhotonView;
-    private int ownerPhotonViewId;
-    private int thisPhotonViewId;
-    private int ownerUserId;
-
-    public bool m_UseLocal;
-
-    bool m_firstTake = false;
-
-    public void Awake()
+    private int MakePseudoViewId(int viewId)
     {
-        m_StoredPosition = transform.localPosition;
-        m_NetworkPosition = Vector3.zero;
-        m_NetworkRotation = Quaternion.identity;
-    }
+        int[] splitParts = new int[2];
 
-    public void Initialize(int objectID, int photonViewID, int ownerId)
-    {
-        thisPhotonViewId = objectID;
-        ownerPhotonViewId = photonViewID;
-        thisPhotonView = PhotonView.Find(objectID).GetComponent<PhotonView>();
-        ownerPhotonView = PhotonView.Find(photonViewID).GetComponent<PhotonView>();
-        Debug.Log(thisPhotonView);
-        ownerUserId = ownerId;
-        if (ownerPhotonView != null)
-        {
-            thisPhotonView.ObservedComponents.Add(this);
-            ownerPhotonView.ObservedComponents.Add(this);
-        }
-    }
+        int playerID = viewId / 1000;
+        int viewNumber = viewId % 1000;
 
-    private void Reset()
-    {
-        m_UseLocal = true;
-    }
+        splitParts[0] = playerID;
+        splitParts[1] = viewNumber;
 
-    void OnEnable()
-    {
-        m_firstTake = true;
-    }
+        splitParts[0] = PhotonNetwork.LocalPlayer.ActorNumber;
+        int res = int.Parse("" + splitParts[0] + new string('0', 3 - splitParts[1].ToString().Length) + splitParts[1]);
 
-    public void Update()
-    {
-        var tr = transform;
-
-        if (!ownerPhotonView.IsMine)
-        {
-            ownerPhotonView.RPC("UpdateRemoteObject", RpcTarget.AllBuffered, m_NetworkPosition, m_NetworkRotation, thisPhotonViewId, ownerPhotonViewId, ownerUserId);
-        }
-    }
-
-    public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info)
-    {
-        var tr = transform;
-
-        // Write
-        if (stream.IsWriting)
-        {
-            if (m_SynchronizePosition)
-            {
-                if (m_UseLocal)
-                {
-                    m_Direction = tr.localPosition - m_StoredPosition;
-                    m_StoredPosition = tr.localPosition;
-                    stream.SendNext(tr.localPosition);
-                    stream.SendNext(m_Direction);
-                }
-                else
-                {
-                    m_Direction = tr.position - m_StoredPosition;
-                    m_StoredPosition = tr.position;
-                    stream.SendNext(tr.position);
-                    stream.SendNext(m_Direction);
-                }
-            }
-
-            if (m_SynchronizeRotation)
-            {
-                if (m_UseLocal)
-                {
-                    stream.SendNext(tr.localRotation);
-                }
-                else
-                {
-                    stream.SendNext(tr.rotation);
-                }
-            }
-
-            if (m_SynchronizeScale)
-            {
-                stream.SendNext(tr.localScale);
-            }
-        }
-        // Read
-        else
-        {
-            if (m_SynchronizePosition)
-            {
-                m_NetworkPosition = (Vector3)stream.ReceiveNext();
-                m_Direction = (Vector3)stream.ReceiveNext();
-
-                if (m_firstTake)
-                {
-                    if (m_UseLocal)
-                        tr.localPosition = m_NetworkPosition;
-                    else
-                        tr.position = m_NetworkPosition;
-
-                    m_Distance = 0f;
-                }
-                else
-                {
-                    float lag = Mathf.Abs((float)(PhotonNetwork.Time - info.SentServerTime));
-                    m_NetworkPosition += m_Direction * lag;
-                    if (m_UseLocal)
-                    {
-                        m_Distance = Vector3.Distance(tr.localPosition, m_NetworkPosition);
-                    }
-                    else
-                    {
-                        m_Distance = Vector3.Distance(tr.position, m_NetworkPosition);
-                    }
-                }
-
-            }
-
-            if (m_SynchronizeRotation)
-            {
-                m_NetworkRotation = (Quaternion)stream.ReceiveNext();
-
-                if (m_firstTake)
-                {
-                    m_Angle = 0f;
-
-                    if (m_UseLocal)
-                    {
-                        tr.localRotation = m_NetworkRotation;
-                    }
-                    else
-                    {
-                        tr.rotation = m_NetworkRotation;
-                    }
-                }
-                else
-                {
-                    if (m_UseLocal)
-                    {
-                        m_Angle = Quaternion.Angle(tr.localRotation, m_NetworkRotation);
-                    }
-                    else
-                    {
-                        m_Angle = Quaternion.Angle(tr.rotation, m_NetworkRotation);
-                    }
-                }
-            }
-
-            if (m_SynchronizeScale)
-            {
-                tr.localScale = (Vector3)stream.ReceiveNext();
-            }
-
-            if (m_firstTake)
-            {
-                m_firstTake = false;
-            }
-        }
+        return res;
     }
 
     [PunRPC]
-    private void UpdateRemoteObject(Vector3 position, Quaternion rotation, int thisPhotonViewId, int ownerPhotonViewId, int ownerUserId)
+    private void UpdateRemoteObject(Quaternion rotation, int ownerPViewId)
     {
-        //Debug.Log("this: " + thisPhotonViewId);
-        //Debug.Log("ownr: " + ownerPhotonViewId);
-        //Debug.Log("pv.f(ow): " + PhotonView.Find(ownerPhotonViewId));
-        //Debug.Log("pv.f(th): " + PhotonView.Find(thisPhotonViewId));
-        //Debug.Log("ow.ismin: " + PhotonView.Find(ownerPhotonViewId).IsMine);
-        //Debug.Log("th.ismin: " + PhotonView.Find(thisPhotonViewId).IsMine);
-        //Debug.Log("ownerUserId: " + ownerUserId);
-        if (PhotonView.Find(ownerPhotonViewId) != null && PhotonNetwork.LocalPlayer.ActorNumber != ownerUserId)
+        ownerPViewId = MakePseudoViewId(ownerPViewId);
+        var view = PhotonView.Find(ownerPViewId);
+
+        if (view != null)
         {
-            //PhotonView.Find(thisPhotonViewId).transform.SetPositionAndRotation(position, rotation);
-            transform.position = Vector3.MoveTowards(transform.position, position, m_Distance * Time.deltaTime * PhotonNetwork.SerializationRate);
-            transform.rotation = Quaternion.RotateTowards(transform.rotation, rotation, m_Angle * Time.deltaTime * PhotonNetwork.SerializationRate);
+            var position = networkPosition;
+            position.y = view.gameObject.transform.position.y;
+            view.gameObject.transform.position = Vector3.Lerp(view.gameObject.transform.position, position, Time.deltaTime * 3f);
+            view.gameObject.transform.rotation = Quaternion.RotateTowards(view.gameObject.transform.rotation, rotation, angle * Time.deltaTime * PhotonNetwork.SerializationRate);
         }
-    }*/
+    }
 }
-
-//public class ObjectSyncController : MonoBehaviourPunCallbacks, IPunObservable
-//{
-//    private PhotonView thisPhotonView;
-//    private PhotonView ownerPhotonView;
-//    private int ownerPhotonViewId;
-//    private int thisPhotonViewId;
-//    private Vector3 networkPosition;
-//    private Quaternion networkRotation;
-//    private Quaternion previousRotation;
-//    private Vector3 previousPosition;
-
-//    private bool hasRotationChanged;
-//    private bool hasPositionChanged;
-
-//    private ARPlane arPlane;
-
-//    private void Awake()
-//    {
-//        arPlane = FindObjectOfType<ARPlane>();
-//    }
-
-//    public void Initialize(int objectID, int photonViewID)
-//    {
-//        thisPhotonViewId = objectID;
-//        ownerPhotonViewId = photonViewID;
-//        thisPhotonView = PhotonView.Find(objectID).GetComponent<PhotonView>();
-//        ownerPhotonView = PhotonView.Find(photonViewID).GetComponent<PhotonView>();
-//        previousRotation = transform.rotation;
-//        previousPosition = arPlane.transform.InverseTransformPoint(transform.position);
-
-//        if (ownerPhotonView != null)
-//        {
-//            thisPhotonView.ObservedComponents.Add(this);
-//            ownerPhotonView.ObservedComponents.Add(this);
-//        }
-//    }
-
-//    private void Update()
-//    {
-//        if (ownerPhotonView != null && ownerPhotonView.IsMine)
-//        {
-//            if (hasPositionChanged || hasRotationChanged)
-//            {
-//                ownerPhotonView.RPC("UpdateRemoteObject", RpcTarget.AllBuffered, networkPosition, networkRotation, thisPhotonViewId, ownerPhotonViewId);
-//                hasPositionChanged = false;
-//                hasRotationChanged = false;
-//            }
-//        }
-//    }
-
-//    public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info)
-//    {
-//        if (stream.IsWriting)
-//        {
-//            stream.SendNext(hasPositionChanged);
-//            if (hasPositionChanged)
-//                stream.SendNext(arPlane.transform.InverseTransformPoint(transform.position));
-
-//            stream.SendNext(hasRotationChanged);
-//            if (hasRotationChanged)
-//                stream.SendNext(transform.rotation);
-//        }
-//        else
-//        {
-//            hasPositionChanged = (bool)stream.ReceiveNext();
-//            if (hasPositionChanged)
-//                networkPosition = (Vector3)stream.ReceiveNext();
-
-//            hasRotationChanged = (bool)stream.ReceiveNext();
-//            if (hasRotationChanged)
-//                networkRotation = (Quaternion)stream.ReceiveNext();
-//        }
-//    }
-
-//    [PunRPC]
-//    private void UpdateRemoteObject(Vector3 position, Quaternion rotation, int thisPhotonViewId, int ownerPhotonViewId)
-//    {
-//        if (PhotonView.Find(ownerPhotonViewId) != null && !PhotonView.Find(ownerPhotonViewId).IsMine &&
-//            PhotonView.Find(thisPhotonViewId) != null && PhotonView.Find(thisPhotonViewId).IsMine)
-//        {
-//            transform.SetPositionAndRotation(position, rotation);
-//        }
-//    }
-
-//    public override void OnMasterClientSwitched(Player newMasterClient)
-//    {
-//        if (ownerPhotonView != null && ownerPhotonView.IsMine)
-//        {
-//            hasPositionChanged = true;
-//            hasRotationChanged = true;
-//        }
-//    }
-//}

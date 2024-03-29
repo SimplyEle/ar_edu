@@ -4,6 +4,7 @@ using UnityEngine.XR.Interaction.Toolkit.Utilities;
 using Photon.Pun;
 using System.Numerics;
 using UnityEngine.XR.ARFoundation;
+using Photon.Realtime;
 
 namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
 {
@@ -28,6 +29,9 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
             }
             set => m_CameraToFace = value;
         }
+
+        // Array of players
+        Player[] players;
 
         [SerializeField]
         [Tooltip("The list of prefabs available to spawn.")]
@@ -217,6 +221,7 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
 
             var objectIndex = isSpawnOptionRandomized ? Random.Range(0, m_ObjectPrefabs.Count) : m_SpawnOptionIndex;
             var newObject = PhotonNetwork.Instantiate(m_ObjectPrefabs[objectIndex].name, spawnPoint, transform.rotation);
+            newObject.tag = "Custom";
 
             if (m_SpawnAsChildren)
                 newObject.transform.parent = transform;
@@ -241,19 +246,21 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
             GameObject.Find("Object Spawner").GetComponent<PhotonView>().RPC("SpawnObjectRPC", RpcTarget.AllBufferedViaServer, prefabName, spawnLocalPoint, newObject.transform.rotation, photonView.ViewID, PhotonNetwork.LocalPlayer.ActorNumber);
 
             objectSpawned?.Invoke(newObject);
+
             return true;
         }
 
         [PunRPC]
-        void SpawnObjectRPC(string prefabName, Vector3 position, Quaternion rotation, int photonViewID, int ownerUserId)
+        void SpawnObjectRPC(string prefabName, Vector3 position, Quaternion rotation, int ownerPhotonViewID, int ownerUserId)
         {
             if (PhotonNetwork.LocalPlayer.ActorNumber != ownerUserId)
             {
                 position.y = FindObjectOfType<ARPlane>().transform.position.y;
                 var newObject = PhotonNetwork.Instantiate(prefabName, position, rotation);
+                newObject.tag = "Custom";
                 var syncController = newObject.GetComponent<ObjectSyncController>();
                 if (syncController != null)
-                    syncController.Initialize(newObject.GetPhotonView().ViewID, photonViewID, ownerUserId, position);
+                    syncController.Initialize(newObject.GetPhotonView().ViewID, ownerPhotonViewID, ownerUserId, position);
             }
         }
     }

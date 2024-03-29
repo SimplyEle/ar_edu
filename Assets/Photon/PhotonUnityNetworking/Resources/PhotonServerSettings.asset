@@ -43,6 +43,7 @@ MonoBehaviour:
   - TrySpawnObject
   - SpawnObjectRPC
   - UpdateRemoteObject
+  - AddObservable
   DisableAutoOpenWizard: 1
   ShowSettings: 0
   DevRegionSetOnce: 0
