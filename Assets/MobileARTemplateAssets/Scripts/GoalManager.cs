@@ -1,3 +1,4 @@
+using Photon.Pun;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -158,6 +159,19 @@ public class GoalManager : MonoBehaviour
         set => m_CreateButton = value;
     }
 
+    [SerializeField]
+    [Tooltip("Button that stops scanning.")]
+    GameObject m_StopScanButton;
+
+    /// <summary>
+    /// Button that stops scanning.
+    /// </summary>
+    public GameObject stopScanButton
+    {
+        get => m_StopScanButton;
+        set => m_StopScanButton = value;
+    }
+
     [Tooltip("The AR Template Menu Manager object to enable once the greeting prompt is dismissed.")]
     [SerializeField]
     ARTemplateMenuManager m_MenuManager;
@@ -307,6 +321,7 @@ public class GoalManager : MonoBehaviour
         m_GreetingPrompt.SetActive(false);
         m_OptionsButton.SetActive(true);
         m_CreateButton.SetActive(true);
+        m_StopScanButton.SetActive(true);
         m_MenuManager.enabled = true;
 
         for (int i = startingStep; i < m_StepList.Count; i++)
