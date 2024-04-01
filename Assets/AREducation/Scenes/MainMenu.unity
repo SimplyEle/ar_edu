@@ -177,6 +177,7 @@ MonoBehaviour:
   m_GreetingPrompt: {fileID: 0}
   m_OptionsButton: {fileID: 0}
   m_CreateButton: {fileID: 0}
+  m_StopScanButton: {fileID: 0}
   m_MenuManager: {fileID: 68032540}
 --- !u!114 &68032540
 MonoBehaviour:
