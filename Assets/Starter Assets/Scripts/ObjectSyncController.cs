@@ -148,8 +148,9 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
             {
                 var position = networkPosition;
                 position.y = view.gameObject.transform.position.y;
-                view.gameObject.transform.position = Vector3.Lerp(view.gameObject.transform.position, position, Time.deltaTime * 3f);
+                view.gameObject.transform.position = Vector3.Lerp(view.gameObject.transform.position, position, Time.deltaTime * 10f);
                 view.gameObject.transform.rotation = Quaternion.RotateTowards(view.gameObject.transform.rotation, rotation, angle * Time.deltaTime * PhotonNetwork.SerializationRate);
+                view.gameObject.GetComponent<ObjectSyncController>().networkPosition = position;
             }
         }
 

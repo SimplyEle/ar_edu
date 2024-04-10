@@ -5,6 +5,7 @@ using Photon.Pun;
 using System.Numerics;
 using UnityEngine.XR.ARFoundation;
 using Photon.Realtime;
+using ExitGames.Client.Photon.StructWrapping;
 
 namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
 {
@@ -238,9 +239,9 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
             }
 
             var prefabName = newObject.name.Remove(newObject.name.Length - 7);
-            var spawnLocalPoint = FindObjectOfType<ARPlane>().transform.InverseTransformPoint(newObject.transform.position);
+            //var spawnLocalPoint = FindObjectOfType<ARPlane>().transform.InverseTransformPoint(newObject.transform.position);
             var arPlaneSize = FindObjectOfType<ARPlane>().size;
-            GameObject.Find("Object Spawner").GetComponent<PhotonView>().RPC("SpawnObjectRPC", RpcTarget.AllBufferedViaServer, prefabName, spawnLocalPoint, newObject.transform.rotation, photonView.ViewID, PhotonNetwork.LocalPlayer.ActorNumber, arPlaneSize);
+            GameObject.Find("Object Spawner").GetComponent<PhotonView>().RPC("SpawnObjectRPC", RpcTarget.AllBufferedViaServer, prefabName, newObject.transform.position, newObject.transform.rotation, photonView.ViewID, PhotonNetwork.LocalPlayer.ActorNumber, arPlaneSize);
 
             objectSpawned?.Invoke(newObject);
 
@@ -252,20 +253,15 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
         {
             if (PhotonNetwork.LocalPlayer.ActorNumber != ownerUserId)
             {
-                ARPlane arPlane = FindObjectOfType<ARPlane>();
-
-                Vector2 arPlaneSize = arPlane.size;
-                Vector3 arPlaneCenter = arPlane.center;
-                Vector2 res = new(ownerArPlaneSize.x/arPlaneSize.x, ownerArPlaneSize.y/arPlaneSize.y);
-
-                position.x /= res.x;
-                position.x = arPlaneCenter.x + position.x;
-                position.z /= res.y;
-                position.z = arPlaneCenter.z + position.y;
-
-                position.y = FindObjectOfType<ARPlane>().transform.position.y;
+                var arPlane = FindObjectOfType<ARPlane>();
+                //var res = new Vector3(position.x / ownerArPlaneSize.x, position.y, position.z / ownerArPlaneSize.y);
+                var localPosition = arPlane.transform.InverseTransformPoint(position);
+                localPosition.y = arPlane.transform.position.y;
+                //localPosition = arPlane.transform.TransformPoint(new Vector3(localPosition.x, arPlane.transform.position.y, localPosition.z));
 
                 var newObject = PhotonNetwork.Instantiate(prefabName, position, rotation);
+                newObject.transform.parent = arPlane.transform;
+                newObject.transform.localPosition = localPosition;
 
                 var syncController = newObject.GetComponent<ObjectSyncController>();
                 if (syncController != null)
