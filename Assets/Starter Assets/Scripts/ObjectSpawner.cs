@@ -220,6 +220,10 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
             var objectIndex = isSpawnOptionRandomized ? Random.Range(0, m_ObjectPrefabs.Count) : m_SpawnOptionIndex;
             var newObject = PhotonNetwork.Instantiate(m_ObjectPrefabs[objectIndex].name, spawnPoint, transform.rotation);
 
+            var arPlane = FindObjectOfType<ARPlane>();
+            var arPlaneSize = arPlane.size;
+            var relativeSpawnPoint = arPlane.transform.InverseTransformPoint(spawnPoint);
+
             if (m_SpawnAsChildren)
                 newObject.transform.parent = transform;
 
@@ -239,9 +243,7 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
             }
 
             var prefabName = newObject.name.Remove(newObject.name.Length - 7);
-            //var spawnLocalPoint = FindObjectOfType<ARPlane>().transform.InverseTransformPoint(newObject.transform.position);
-            var arPlaneSize = FindObjectOfType<ARPlane>().size;
-            GameObject.Find("Object Spawner").GetComponent<PhotonView>().RPC("SpawnObjectRPC", RpcTarget.AllBufferedViaServer, prefabName, newObject.transform.position, newObject.transform.rotation, photonView.ViewID, PhotonNetwork.LocalPlayer.ActorNumber, arPlaneSize);
+            GameObject.Find("Object Spawner").GetComponent<PhotonView>().RPC("SpawnObjectRPC", RpcTarget.AllBufferedViaServer, prefabName, relativeSpawnPoint, newObject.transform.rotation, photonView.ViewID, PhotonNetwork.LocalPlayer.ActorNumber, arPlaneSize);
 
             objectSpawned?.Invoke(newObject);
 
@@ -249,23 +251,18 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
         }
 
         [PunRPC]
-        void SpawnObjectRPC(string prefabName, Vector3 position, Quaternion rotation, int ownerPhotonViewID, int ownerUserId, Vector2 ownerArPlaneSize)
+        void SpawnObjectRPC(string prefabName, Vector3 relativePosition, Quaternion rotation, int ownerPhotonViewID, int ownerUserId, Vector2 ownerArPlaneSize)
         {
             if (PhotonNetwork.LocalPlayer.ActorNumber != ownerUserId)
             {
                 var arPlane = FindObjectOfType<ARPlane>();
-                //var res = new Vector3(position.x / ownerArPlaneSize.x, position.y, position.z / ownerArPlaneSize.y);
-                var localPosition = arPlane.transform.InverseTransformPoint(position);
-                localPosition.y = arPlane.transform.position.y;
-                //localPosition = arPlane.transform.TransformPoint(new Vector3(localPosition.x, arPlane.transform.position.y, localPosition.z));
+                var position = arPlane.transform.TransformPoint(relativePosition);
 
                 var newObject = PhotonNetwork.Instantiate(prefabName, position, rotation);
-                newObject.transform.parent = arPlane.transform;
-                newObject.transform.localPosition = localPosition;
 
                 var syncController = newObject.GetComponent<ObjectSyncController>();
                 if (syncController != null)
-                    syncController.Initialize(newObject.GetPhotonView().ViewID, ownerPhotonViewID, ownerUserId, position);
+                    syncController.Initialize(newObject.GetPhotonView().ViewID, ownerPhotonViewID, ownerUserId, relativePosition);
             }
         }
     }

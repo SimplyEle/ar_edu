@@ -4,6 +4,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using UnityEngine;
 using UnityEngine.UIElements;
 using UnityEngine.XR.ARFoundation;
@@ -26,6 +27,8 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
         private Vector3 previousPosition;
         private Vector3 direction;
 
+        private int localUserId = PhotonNetwork.LocalPlayer.ActorNumber;
+
         bool m_firstTake = false;
 
         void OnEnable()
@@ -33,7 +36,7 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
             m_firstTake = true;
         }
 
-        public void Initialize(int objectID, int photonViewID, int ownerId, Vector3 position)
+        public void Initialize(int objectID, int photonViewID, int ownerId, Vector3 relativePosition)
         {
             thisPhotonViewId = objectID;
             ownerPhotonViewId = photonViewID;
@@ -49,13 +52,11 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
                 thisPhotonView.RPC("AddObservable", RpcTarget.Others, ownerPhotonViewId, thisPhotonViewId);
             }
 
-            ownerUserId = ownerId;
-
             previousRotation = transform.rotation;
-            previousPosition = position;
 
-            networkPosition = position;
-            
+            var arPlane = FindObjectOfType<ARPlane>();
+            previousPosition = arPlane.transform.TransformPoint(relativePosition);
+            networkPosition = arPlane.transform.TransformPoint(relativePosition);
         }
 
         [PunRPC]
@@ -70,11 +71,11 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
             {
                 gameObject.GetComponentInChildren<MeshRenderer>().enabled = false;
             }
-            if (ownerPhotonView != null && photonView.IsMine)
+            if (ownerPhotonView != null && localUserId == ownerUserId)
             {
                 transform.position = Vector3.MoveTowards(transform.position, networkPosition, distance * Time.deltaTime * PhotonNetwork.SerializationRate);
                 transform.rotation = Quaternion.RotateTowards(transform.rotation, networkRotation, angle * Time.deltaTime * PhotonNetwork.SerializationRate);
-                thisPhotonView.RPC("UpdateRemoteObject", RpcTarget.AllViaServer, networkRotation, ownerPhotonViewId);
+                thisPhotonView.RPC("UpdateRemoteObject", RpcTarget.OthersBuffered, networkRotation, ownerPhotonViewId);
             }
         }
 
@@ -84,14 +85,16 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
             {
                 direction = transform.position - previousPosition;
                 previousPosition = transform.position;
+                ownerUserId = PhotonNetwork.LocalPlayer.ActorNumber;
                 stream.SendNext(transform.position);
                 stream.SendNext(direction);
                 stream.SendNext(transform.rotation);
+                stream.SendNext(ownerUserId);
             }
             else
             {
                 networkPosition = (Vector3)stream.ReceiveNext();
-                networkPosition.Set(networkPosition.x, transform.position.y, networkPosition.z);
+                networkPosition = new Vector3(networkPosition.x, transform.position.y, networkPosition.z);
                 direction = (Vector3)stream.ReceiveNext();
                 if (m_firstTake)
                 {
@@ -102,11 +105,10 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
                 {
                     float lag = Mathf.Abs((float)(PhotonNetwork.Time - info.SentServerTime));
                     networkPosition += direction * lag;
-                    var tmpNetworkPosition = Vector3.zero;
-                    tmpNetworkPosition.Set(networkPosition.x, transform.position.y, networkPosition.z);
-                    distance = Vector3.Distance(transform.position, tmpNetworkPosition);
+                    distance = Vector3.Distance(transform.position, networkPosition);
                 }
                 networkRotation = (Quaternion)stream.ReceiveNext();
+                ownerUserId = (int)stream.ReceiveNext();
                 if (m_firstTake)
                 {
                     angle = 0f;
@@ -144,11 +146,11 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
         {
             var view = PhotonView.Find(MakePseudoViewId(ownerPViewId));
 
-            if (view != null)
+            if (view != null && localUserId != ownerUserId)
             {
                 var position = networkPosition;
                 position.y = view.gameObject.transform.position.y;
-                view.gameObject.transform.position = Vector3.Lerp(view.gameObject.transform.position, position, Time.deltaTime * 10f);
+                view.gameObject.transform.position = Vector3.MoveTowards(view.gameObject.transform.position, position, distance * Time.deltaTime * PhotonNetwork.SerializationRate);
                 view.gameObject.transform.rotation = Quaternion.RotateTowards(view.gameObject.transform.rotation, rotation, angle * Time.deltaTime * PhotonNetwork.SerializationRate);
                 view.gameObject.GetComponent<ObjectSyncController>().networkPosition = position;
             }
